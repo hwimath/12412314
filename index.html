@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>로그방정식 퀴즈게임</title>
+  <!-- MathJax CDN 로드 -->
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" defer></script>
+
+  <style>
+    body {
+      margin: 0; padding: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: #f2f2f2;
+    }
+    header, .game-screen, .end-screen {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1, h2, h3 {
+      margin: 0.5em 0;
+      color: #333;
+    }
+    .hidden {
+      display: none;
+    }
+    .difficulty-select {
+      margin-top: 10px;
+    }
+    .difficulty-select label {
+      margin-right: 20px;
+    }
+    .btn {
+      display: inline-block;
+      margin: 10px 5px;
+      padding: 10px 15px;
+      background: #4e8ef7;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    .btn:hover {
+      background: #3c6acb;
+    }
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .energy-container {
+      flex: 1;
+      margin: 0 10px;
+      height: 20px;
+      background: #ccc;
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+    }
+    .energy-bar {
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 100%;
+      background: linear-gradient(90deg, #f66, #f33);
+      transition: width 0.2s linear;
+    }
+    .question-area {
+      background: #fff;
+      padding: 20px;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      min-height: 200px;
+    }
+    .choice-list {
+      list-style: none;
+      padding-left: 0;
+    }
+    .choice-list li {
+      margin: 8px 0;
+    }
+    .choice-btn {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #aaa;
+      padding: 10px;
+      background: #fafafa;
+      cursor: pointer;
+      border-radius: 5px;
+      font-size: 1rem;
+    }
+    .choice-btn:hover {
+      background: #f0f0f0;
+    }
+    .info-line {
+      margin-top: 10px;
+      color: #666;
+    }
+    .answer-display {
+      color: #d00;
+      font-weight: bold;
+      margin-top: 5px;
+    }
+    .end-screen {
+      text-align: center;
+    }
+    .score-btn {
+      margin-top: 20px;
+      background: #28a745;
+    }
+    #response {
+      margin-top: 20px;
+      white-space: pre-wrap;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>로그방정식 퀴즈게임</h1>
+</header>
+
+<!-- 시작 화면 -->
+<div id="start-screen" class="game-screen">
+  <h2>이름을 입력하고 난이도를 선택하세요</h2>
+  <div>
+    <label>이름: 
+      <input type="text" id="playerName" placeholder="이름 입력" />
+    </label>
+  </div>
+  <div class="difficulty-select">
+    <label><input type="radio" name="difficulty" value="최상" /> 최상 (20초, +20점)</label>
+    <label><input type="radio" name="difficulty" value="상" /> 상 (30초, +15점)</label>
+    <label><input type="radio" name="difficulty" value="중" /> 중 (40초, +13점)</label>
+    <label><input type="radio" name="difficulty" value="하" checked /> 하 (시간제한 없음, +10점)</label>
+  </div>
+  <button class="btn" onclick="startGame()">게임 시작</button>
+</div>
+
+<!-- 게임 진행 화면 -->
+<div id="quiz-screen" class="game-screen hidden">
+
+  <!-- 상단 상태 표시줄 -->
+  <div class="status-bar">
+    <div>
+      남은 기회: <span id="lifeDisplay">3</span> / 3
+    </div>
+    <div class="energy-container" id="energyContainer">
+      <div class="energy-bar" id="energyBar"></div>
+    </div>
+    <div>
+      총 시간: <span id="totalTime">0</span>초
+    </div>
+    <div>
+      점수: <span id="scoreDisplay">0</span>
+    </div>
+  </div>
+
+  <div class="question-area">
+    <h3 id="questionText">문제 영역</h3>
+    <ul class="choice-list" id="choiceList">
+      <!-- 보기 버튼 들어감 -->
+    </ul>
+    <div class="answer-display" id="answerDisplay"></div>
+  </div>
+
+  <div class="info-line">
+    (시간 내에 선택하지 못하면 자동 오답 처리됩니다.)
+  </div>
+
+</div>
+
+<!-- 게임 오버 화면 -->
+<div id="end-screen" class="game-screen hidden end-screen">
+  <h2 id="endTitle">게임 종료</h2>
+  <p>최종 점수: <span id="finalScore">0</span></p>
+  <p>플레이 시간: <span id="finalTime">0</span>초</p>
+  <button class="btn score-btn" onclick="sendScore()">점수 전송</button>
+  <div id="response"></div>
+</div>
+
+<script>
+
+// ------------------------------
+// (1) 문제 데이터
+//    - 본 대화에서 등장한 문제들을 모아, {question, choices[], correctIndex} 형태로 정리
+//    - 4지선다(0~3번), correctIndex는 0부터 시작
+// ------------------------------
+
+/*
+  주의:
+  - 아래 문제들은 "대화"에 등장한 1~20, 44~60, 61~67, 68~79 범위의 문제를 요약한 것입니다.
+  - 문제 텍스트와 보기(4지선다)에는 LaTeX를 사용: \\(...\\) 형태
+  - 정답은 correctIndex로 지정(0~3)
+  - 실제 문항 수가 많으므로, 여기서는 '질문 + 선택지 + 정답' 위주로만 저장.
+  - 모든 문제를 한 번씩 낸 뒤(무작위) 이후에는 무한 반복 랜덤 출제.
+*/
+
+// 예시 형태: {
+//   question: "\\(\\log_{2}(x) + \\log_{x}(16) = 5\\) 을 만족하는 x?",
+//   choices: [
+//     "{2}",
+//     "{16}",
+//     "{2, 16}",
+//     "해가 없다"
+//   ],
+//   correctIndex: 2
+// }
+
+const questionBank = [
+
+  // -------------------- 1~20 --------------------
+  {
+    question: "\\(\\log_{\\tfrac12}(x) = 4\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "\\(\\tfrac{1}{8}\\)",
+      "\\(\\tfrac{1}{16}\\)",
+      "\\(8\\)",
+      "\\(16\\)"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(\\log_{x}(64) = 2\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "2",
+      "4",
+      "8",
+      "16"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\(\\log_{3}(2x - 5) = 2\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "4",
+      "5",
+      "6",
+      "7"
+    ],
+    correctIndex: 3
+  },
+  {
+    question: "\\(\\log_{\\tfrac12}(3x - 1) = -3\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\(\\log_{5}(x) = \\tfrac12\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "\\(\\sqrt{2}\\)",
+      "\\(\\sqrt{3}\\)",
+      "\\(\\sqrt{5}\\)",
+      "\\(\\sqrt{7}\\)"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\(\\log_{2}(3x + 2) = 3\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(\\log_{2}(x+4) = 5\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "16",
+      "24",
+      "28",
+      "32"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\(\\log_{\\sqrt{2}}(x+3) = 4\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    correctIndex: 0
+  },
+  {
+    question: "\\(\\log_{4}(5x - 3) = \\tfrac12\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "0",
+      "1",
+      "3",
+      "4"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(\\log_{\\tfrac13}(x+4) = -\\log_{3}(8-x)\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "1",
+      "2",
+      "4",
+      "8"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(\\log_{3}(2x-1) = \\log_{3}(x+2)\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\(\\log_{\\tfrac13}(x+1) = \\log_{\\tfrac13}(4x - 2)\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "0",
+      "1",
+      "2",
+      "4"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(\\log_{3}(x+6) = \\log_{3}(8-x)\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    correctIndex: 0
+  },
+  {
+    question: "\\(\\log_{\\sqrt{2}}(x+2) = \\log_{2}(x+1)+2\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "-1",
+      "0",
+      "1",
+      "2"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(\\log_{2}(x+2) = 1 + \\log_{2}(x-3)\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "4",
+      "5",
+      "6",
+      "8"
+    ],
+    correctIndex: 3
+  },
+  {
+    question: "\\(\\log_{2}(x-1) = \\log_{2}(3-x)\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "2",
+      "3",
+      "4",
+      "6"
+    ],
+    correctIndex: 0
+  },
+  {
+    question: "\\(2\\,\\log_{5}(3x-1) = \\log_{5}(18x-15)\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "1",
+      "\\(\\tfrac{4}{3}\\)",
+      "\\(\\tfrac{3}{2}\\)",
+      "2"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(\\log_{\\tfrac12}(x-1) = \\tfrac12\\,\\log_{\\tfrac12}(x+5)\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "2",
+      "3",
+      "4",
+      "5"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\(\\log_{\\tfrac12}(x+4) = \\log_{\\tfrac12}(6-x)\\) 에서 \\(x\\)의 값은?",
+    choices: [
+      "0",
+      "1",
+      "2",
+      "3"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(\\log_{\\sqrt2}(x) - \\log_{2}(x - \\tfrac32) = 3\\) 의 해는?",
+    choices: [
+      "\\(x = 2\\)",
+      "\\(x = 6\\)",
+      "\\(x = 2\\) 또는 \\(x = 6\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+
+  // -------------------- 44~60 --------------------
+  {
+    question: "\\(\\log_{2}(x) + \\log_{x}(16) = 5\\) 의 해는?",
+    choices: [
+      "\\(\\{2\\}\\)",
+      "\\(\\{16\\}\\)",
+      "\\(\\{2, 16\\}\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\(\\log_{3}(x) - \\log_{x}(9) = 1\\) 의 해는?",
+    choices: [
+      "\\(\\{\\tfrac13\\}\\)",
+      "\\(\\{9\\}\\)",
+      "\\(\\{\\tfrac13, 9\\}\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\(2(\\log_{2}(x/2))^2 = 3(1 - \\log_{2}(x))\\) 의 해는?",
+    choices: [
+      "\\(\\{2\\}\\)",
+      "\\(\\{\\tfrac{1}{\\sqrt2}\\}\\)",
+      "\\(\\{2, \\tfrac{1}{\\sqrt2}\\}\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\((\\log_{2}(x))^2 - 5\\,\\log_{2}(x) + 6 = 0\\) 의 해는?",
+    choices: [
+      "\\(\\{4\\}\\)",
+      "\\(\\{8\\}\\)",
+      "\\(\\{4,8\\}\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\((\\log_{\\sqrt3}(x))^2 - 3\\,\\log_{\\sqrt3}(x^2) + 8 = 0\\) 의 해?",
+    choices: [
+      "\\(\\{3\\}\\)",
+      "\\(\\{9\\}\\)",
+      "\\(\\{3,9\\}\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\(\\log(\\sqrt{5(x+1)}) = 1 - \\tfrac12 \\log(2x - 1)\\) 의 해는?(밑10)",
+    choices: [
+      "\\(\\{-3.5\\}\\)",
+      "\\(\\{3\\}\\)",
+      "\\(\\{-3.5,3\\}\\)",
+      "해가 없다"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\((\\log_{3}(9x))^2 - 3\\,\\log_{3}(x) - 6=0\\) 의 해는?",
+    choices: [
+      "\\(\\{\\tfrac{1}{9}\\}\\)",
+      "\\(\\{3\\}\\)",
+      "\\(\\{\\tfrac{1}{9}, 3\\}\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\((\\log_{3}(x))^2 + \\log_{3}(x^2) - 15 = 0\\) 의 해?",
+    choices: [
+      "\\(\\{\\tfrac{1}{243}\\}\\)",
+      "\\(\\{27\\}\\)",
+      "\\(\\{\\tfrac{1}{243}, 27\\}\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\((\\log_{2}(x))^2 + \\log_{2}(x) - 2=0\\) 의 해?",
+    choices: [
+      "\\(\\{\\tfrac14\\}\\)",
+      "\\(\\{2\\}\\)",
+      "\\(\\{\\tfrac14, 2\\}\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\((1+\\log_{2}(x))^2 - 3\\,\\log_{2}(x^2) + 2=0\\) 의 해는?",
+    choices: [
+      "\\(\\{2\\}\\)",
+      "\\(\\{8\\}\\)",
+      "\\(\\{2,8\\}\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\((\\log_{2}(4x))(\\log_{2}(2x))=20\\) 의 해?",
+    choices: [
+      "\\(\\{8\\}\\)",
+      "\\(\\{\\tfrac{1}{64}\\}\\)",
+      "\\(\\{8,\\tfrac{1}{64}\\}\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\((\\log(10x))(\\log(100x))=12\\) (밑10) 의 해?",
+    choices: [
+      "\\(\\{100\\}\\)",
+      "\\(\\{10^{-5}\\}\\)",
+      "\\(\\{100,10^{-5}\\}\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\(3^{\\log(9x)} - 2^{\\log(4x)}=0\\) (밑10) 의 해?",
+    choices: [
+      "\\(\\tfrac{1}{6}\\)",
+      "\\(\\tfrac{1}{36}\\)",
+      "6",
+      "36"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(2^{\\log(2x)}=5^{\\log(5x)}\\) (밑10) 의 해?",
+    choices: [
+      "0.1",
+      "0.2",
+      "5",
+      "10"
+    ],
+    correctIndex: 0
+  },
+  {
+    question: "\\(\\log_{2}\\{\\log_{2}(\\log_{2} x)\\}=1\\) 의 해?",
+    choices: [
+      "\\(x=4\\)",
+      "\\(x=8\\)",
+      "\\(x=16\\)",
+      "해가 없다"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\(\\log_{2}\\{\\log_{3}(\\log_{2} x)\\}=1\\) 의 해?",
+    choices: [
+      "\\(x=64\\)",
+      "\\(x=128\\)",
+      "\\(x=512\\)",
+      "\\(x=1024\\)"
+    ],
+    correctIndex: 2
+  },
+
+  // -------------------- 61~67 --------------------
+  {
+    question: "\\(x^{\\log_{3} x} = \\dfrac{x^3}{9}\\) 의 해?",
+    choices: [
+      "\\(x=1,3\\)",
+      "\\(x=3,9\\)",
+      "\\(x=9,27\\)",
+      "\\(x=27,81\\)"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(x^{\\log x} = \\dfrac{100}{x}\\) (밑10) 의 해?",
+    choices: [
+      "\\(x=0.01,10\\)",
+      "\\(x=1,10\\)",
+      "\\(x=10,100\\)",
+      "\\(x=0.1,1\\)"
+    ],
+    correctIndex: 0
+  },
+  {
+    question: "\\(x^{\\log_{3} x} = \\dfrac{1}{9}x^3\\) 의 해?",
+    choices: [
+      "\\(x=3,9\\)",
+      "\\(x=9,27\\)",
+      "\\(x=1,9\\)",
+      "\\(x=1,3\\)"
+    ],
+    correctIndex: 0
+  },
+  {
+    question: "\\(x^{\\log_{2} x} = \\dfrac{x^5}{16}\\) 의 해?",
+    choices: [
+      "\\(x=1,2\\)",
+      "\\(x=2,16\\)",
+      "\\(x=4,16\\)",
+      "\\(x=8,16\\)"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(x^{\\log_{2} x} = 32\\,x^4\\) 의 해?",
+    choices: [
+      "\\(x=\\tfrac12,32\\)",
+      "\\(x=1,2\\)",
+      "\\(x=2,4\\)",
+      "\\(x=4,32\\)"
+    ],
+    correctIndex: 0
+  },
+  {
+    question: "\\(x^{\\log_{5} x} = \\dfrac{625}{x^3}\\) 의 해?",
+    choices: [
+      "\\(x=\\tfrac{1}{625},5\\)",
+      "\\(x=\\tfrac{1}{25},25\\)",
+      "\\(x=5,25\\)",
+      "\\(x=5,125\\)"
+    ],
+    correctIndex: 0
+  },
+  {
+    question: "\\(x^{\\log x} = \\dfrac{1}{10\\,x^2}\\) (밑10) 의 해?",
+    choices: [
+      "\\(x=0.01\\)",
+      "\\(x=0.1\\)",
+      "\\(x=1\\)",
+      "\\(x=10\\)"
+    ],
+    correctIndex: 1
+  },
+
+  // -------------------- 68~79 --------------------
+  {
+    question: "\\((\\log_{3}(3x))^2 - 2\\,\\log_{3}(x^3) = 0\\) 에서 두 해의 곱 \\(\\alpha\\beta\\)?",
+    choices: [
+      "1",
+      "9",
+      "27",
+      "81"
+    ],
+    correctIndex: 3
+  },
+  {
+    question: "\\((\\log_{5} x)^2 + \\log_{5}(x^2) - 3 = 0\\) 의 두 해 곱?",
+    choices: [
+      "\\(\\tfrac{1}{25}\\)",
+      "1",
+      "25",
+      "125"
+    ],
+    correctIndex: 0
+  },
+  {
+    question: "\\((\\log_{2}(x/2))^2 - \\log_{2}(x) - 2=0\\) 의 두 해 곱?",
+    choices: [
+      "2",
+      "4",
+      "8",
+      "16"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\((\\log_{2} x)^2 - \\log_{2}(x^4) - 3=0\\) 의 두 해 곱?",
+    choices: [
+      "8",
+      "16",
+      "32",
+      "64"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(x^{\\log_{3}(x)} = 27\\,x^2\\) 의 두 해 곱?",
+    choices: [
+      "3",
+      "6",
+      "9",
+      "27"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\((\\log_{\\tfrac12}(2x))^2 + k\\,\\log_{\\tfrac12}(x) = 0\\) 의 두 해 곱이 \\(\\tfrac18\\)일 때 k?",
+    choices: [
+      "-2",
+      "-1",
+      "1",
+      "2"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\((\\log_{5} x)^2 - k\\,\\log_{5}(x) - 6=0\\) 의 두 해 곱=25일 때 k?",
+    choices: [
+      "-2",
+      "1",
+      "2",
+      "6"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\((\\log_{2}(2x))\\,(\\log_{2}(\\tfrac{k}{x})) +5=0\\) 의 두 해 곱=4일 때 k?",
+    choices: [
+      "2",
+      "4",
+      "8",
+      "16"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\((\\log_{3} x)^2 - k\\,\\log_{3}(x^2) +1=0\\) 의 두 해 곱=81일 때 k?",
+    choices: [
+      "1",
+      "2",
+      "4",
+      "8"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\((\\log_{2} x)^2 - k\\,\\log_{2}(x) -3=0\\) 의 두 해 곱=16일 때 k?",
+    choices: [
+      "3",
+      "4",
+      "5",
+      "6"
+    ],
+    correctIndex: 1
+  },
+  {
+    question: "\\(\\log_{3}(x) - \\tfrac13\\,\\log_{x}(3) - k=0\\) 의 두 해 곱=3일 때 k?",
+    choices: [
+      "-1",
+      "0",
+      "1",
+      "3"
+    ],
+    correctIndex: 2
+  },
+  {
+    question: "\\((\\log x)^2 - k\\,\\log x -2=0\\) (밑10) 두 해 곱=10일 때 k?",
+    choices: [
+      "-1",
+      "1",
+      "2",
+      "10"
+    ],
+    correctIndex: 1
+  }
+
+];
+
+// ------------------------------
+// 전역 변수들
+// ------------------------------
+let difficulty = "하";
+let timeLimit = 999999;  // (하: 제한 없음)
+let scorePerCorrect = 10;
+let remainingLife = 3;
+let score = 0;
+let totalElapsed = 0;  // 전체 게임 경과 (초)
+let questionTimer = null; // 각 문제별 에너지바 타이머
+let totalTimeTimer = null; // 전체 시간 타이머
+let currentEnergy = 100; // 에너지바 (0~100)
+let usedQuestions = [];  // 이미 사용한 문제 index
+let randomOrder = [];    // 문제 출제 순서 (섞어서)
+let currentQIndex = 0;   // 현재 문제 index (randomOrder 상의)
+let gameOverFlag = false;
+let playerName = "";
+
+// ------------------------------
+// (2) 난이도 설정에 따른 초기 시간/점수
+// ------------------------------
+function applyDifficulty(diff) {
+  switch(diff) {
+    case "최상":
+      timeLimit = 20;    // 초
+      scorePerCorrect = 20;
+      break;
+    case "상":
+      timeLimit = 30;
+      scorePerCorrect = 15;
+      break;
+    case "중":
+      timeLimit = 40;
+      scorePerCorrect = 13;
+      break;
+    case "하":
+    default:
+      timeLimit = 999999; // 사실상 제한 없음
+      scorePerCorrect = 10;
+      break;
+  }
+}
+
+// ------------------------------
+// (3) 게임 시작
+// ------------------------------
+function startGame() {
+  // 이름
+  const nameInput = document.getElementById("playerName");
+  if(!nameInput.value.trim()) {
+    alert("이름을 입력하세요.");
+    return;
+  }
+  playerName = nameInput.value.trim();
+
+  // 난이도
+  const radios = document.getElementsByName("difficulty");
+  let selected = "하";
+  for(let r of radios) {
+    if(r.checked) {
+      selected = r.value;
+      break;
+    }
+  }
+  difficulty = selected;
+  applyDifficulty(difficulty);
+
+  // 상태 초기화
+  remainingLife = 3;
+  score = 0;
+  totalElapsed = 0;
+  gameOverFlag = false;
+  usedQuestions = [];
+  currentQIndex = 0;
+
+  // 문제 출제 순서 섞기
+  randomOrder = shuffleArray([...Array(questionBank.length).keys()]);
+
+  // 화면 전환
+  document.getElementById("start-screen").classList.add("hidden");
+  document.getElementById("quiz-screen").classList.remove("hidden");
+  document.getElementById("end-screen").classList.add("hidden");
+
+  // UI 초기화
+  document.getElementById("lifeDisplay").textContent = remainingLife;
+  document.getElementById("scoreDisplay").textContent = score;
+  document.getElementById("totalTime").textContent = totalElapsed;
+
+  // 총 시간 타이머 시작
+  if(totalTimeTimer) clearInterval(totalTimeTimer);
+  totalTimeTimer = setInterval(() => {
+    totalElapsed++;
+    document.getElementById("totalTime").textContent = totalElapsed;
+  }, 1000);
+
+  // 첫 문제 로드
+  loadQuestion();
+}
+
+// ------------------------------
+// (4) 문제 로드
+// ------------------------------
+function loadQuestion() {
+  if(gameOverFlag) return;
+
+  // 모든 문제를 소진했다면, 이제부터는 무한 랜덤
+  // (즉, 계속해서 문제를 뽑아 낸다.)
+  if(currentQIndex >= questionBank.length) {
+    // 무작위 한 문제 선택
+    // (끝없이 내주기)
+    var rnd = Math.floor(Math.random()*questionBank.length);
+    displayQuestion(rnd);
+  } else {
+    // 아직 소진 안 했으면, randomOrder에서 꺼냄
+    const qid = randomOrder[currentQIndex];
+    displayQuestion(qid);
+    currentQIndex++;
+  }
+}
+
+// ------------------------------
+// (5) 문제 표시
+// ------------------------------
+function displayQuestion(qid) {
+  const q = questionBank[qid];
+  if(!q) {
+    // 방어 코드
+    return;
+  }
+  document.getElementById("answerDisplay").textContent = ""; // 정답 표시 지움
+
+  // 문제 표시
+  document.getElementById("questionText").innerHTML = q.question;
+
+  // 보기 표시
+  const ul = document.getElementById("choiceList");
+  ul.innerHTML = "";
+  q.choices.forEach((choiceText, idx)=>{
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.innerHTML = choiceText;
+    btn.onclick = ()=>{ onChoiceSelected(qid, idx); };
+    li.appendChild(btn);
+    ul.appendChild(li);
+  });
+
+  // MathJax 렌더링
+  MathJax.typeset();
+
+  // 에너지바 초기화
+  resetEnergy();
+}
+
+// ------------------------------
+// (6) 보기 선택했을 때
+// ------------------------------
+function onChoiceSelected(qid, choiceIndex) {
+  if(gameOverFlag) return;
+
+  // 시간 타이머 중지
+  stopEnergyTimer();
+
+  const q = questionBank[qid];
+  if(!q) return;
+
+  if(q.correctIndex === choiceIndex) {
+    // 정답
+    score += scorePerCorrect;
+    document.getElementById("scoreDisplay").textContent = score;
+    document.getElementById("answerDisplay").textContent = "정답!";
+  } else {
+    // 오답
+    remainingLife--;
+    document.getElementById("lifeDisplay").textContent = remainingLife;
+    // 정답 표시
+    const correctChoiceText = q.choices[q.correctIndex];
+    document.getElementById("answerDisplay").textContent =
+      "오답! 정답은 → " + correctChoiceText;
+    if(remainingLife <= 0) {
+      endGame();
+      return;
+    }
+  }
+
+  // 잠시 후 다음 문제
+  setTimeout(()=>{
+    loadQuestion();
+  },1000);
+}
+
+// ------------------------------
+// (7) 에너지바 제어
+// ------------------------------
+let energyTimer = null;
+function resetEnergy() {
+  stopEnergyTimer();
+  currentEnergy = 100;
+  updateEnergyBar();
+
+  if(difficulty==="하") {
+    // 하 난이도는 시간제한 없음
+    return;
+  }
+
+  // 문제당 timeLimit초 소진
+  // => 1초에 (100 / timeLimit)씩 감소
+  const step = 100 / timeLimit;
+  energyTimer = setInterval(()=>{
+    currentEnergy -= step;
+    if(currentEnergy<=0) {
+      currentEnergy = 0;
+      stopEnergyTimer();
+      // 자동 오답 처리
+      autoWrong();
+    }
+    updateEnergyBar();
+  },1000);
+}
+
+function stopEnergyTimer() {
+  if(energyTimer) {
+    clearInterval(energyTimer);
+    energyTimer = null;
+  }
+}
+function updateEnergyBar() {
+  const bar = document.getElementById("energyBar");
+  bar.style.width = currentEnergy + "%";
+}
+
+// 에너지 소진으로 자동 오답 처리
+function autoWrong() {
+  remainingLife--;
+  document.getElementById("lifeDisplay").textContent = remainingLife;
+  if(remainingLife<=0) {
+    endGame();
+    return;
+  }
+  // 현재 문제의 정답 표시
+  const qid = (currentQIndex>0) ? randomOrder[currentQIndex-1] : randomOrder[0];
+  const q = questionBank[qid];
+  if(q) {
+    const correctText = q.choices[q.correctIndex];
+    document.getElementById("answerDisplay").textContent =
+      "시간 초과! 정답은 → " + correctText;
+  }
+  // 1초 후 다음 문제
+  setTimeout(()=>{
+    loadQuestion();
+  },1000);
+}
+
+// ------------------------------
+// (8) 게임 종료
+// ------------------------------
+function endGame() {
+  gameOverFlag = true;
+  stopEnergyTimer();
+  if(totalTimeTimer) clearInterval(totalTimeTimer);
+
+  // 화면 전환
+  document.getElementById("quiz-screen").classList.add("hidden");
+  document.getElementById("end-screen").classList.remove("hidden");
+
+  // 최종 점수/시간 표시
+  document.getElementById("finalScore").textContent = score;
+  document.getElementById("finalTime").textContent = totalElapsed;
+}
+
+// ------------------------------
+// (9) 무작위 셔플
+// ------------------------------
+function shuffleArray(array) {
+  for(let i=array.length-1; i>0; i--) {
+    const r = Math.floor(Math.random()*(i+1));
+    [array[i], array[r]] = [array[r], array[i]];
+  }
+  return array;
+}
+
+// ------------------------------
+// (10) 점수 전송
+// ------------------------------
+function sendScore(){
+  // saveData( gameName, playerName, score, totalTime )
+  saveData("로그방정식", playerName, score, totalElapsed);
+}
+
+// ------------------------------
+// (11) 서버 전송 함수 (주어진 코드 그대로)
+// ------------------------------
+async function saveData(game, name, score, elapsedTime) {
+  const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+
+  const requestData = {
+      game,
+      name,
+      score: parseInt(score, 10),
+      elapsedTime: parseInt(elapsedTime, 10)
+  };
+
+  try {
+      const response = await fetch(FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestData)
+      });
+
+      const responseData = await response.json();
+
+      if (response.ok) {
+          document.getElementById('response').innerText = 
+              `성공: ${JSON.stringify(responseData, null, 2)}`;
+      } else {
+          document.getElementById('response').innerText = 
+              `오류: ${JSON.stringify(responseData, null, 2)}`;
+      }
+  } catch (error) {
+      console.error('요청 실패:', error);
+      document.getElementById('response').innerText = 
+          `네트워크 오류: ${error.message}`;
+  }
+}
+
+</script>
+
+</body>
+</html>
